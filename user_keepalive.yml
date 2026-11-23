@@ -1,0 +1,32 @@
+name: Keep site awake and recover
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    env:
+      SITE_URL: https://emirates-4st2.onrender.com/
+      DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+    steps:
+      - name: Check site, retry, and redeploy if down
+        run: |
+          code=000
+          for try in 1 2 3; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 60 "$SITE_URL" || echo 000)
+            echo "attempt $try: $code"
+            [ "$code" = "200" ] && break
+            sleep 30
+          done
+          if [ "$code" != "200" ]; then
+            if [ -n "$DEPLOY_HOOK" ]; then
+              echo "Site down. Triggering Render redeploy."
+              curl -s -X POST "$DEPLOY_HOOK" && echo "redeploy requested"
+            else
+              echo "Site down, but RENDER_DEPLOY_HOOK secret is not set."
+              exit 1
+            fi
+          fi
